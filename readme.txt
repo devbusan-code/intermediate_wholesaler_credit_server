@@ -7,3 +7,14 @@ ps -aux | grep python
 curl http://localhost:8081/docs
 
 curl http://localhost:8081/redoc
+
+
+uv run fastapi dev
+
+
+# .env
+MYSQL_HOST=""
+MYSQL_PORT=3306
+MYSQL_USER=""
+MYSQL_PASSWORD=""
+MYSQL_DATABASE=""

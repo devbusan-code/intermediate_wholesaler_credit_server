@@ -22,11 +22,9 @@ logger = LoggerKKI().get_logger()
 # 허용할 IP 또는 IP 대역 목록 (CIDR 표기법 지원)
 allowed_ips = [
     "127.0.0.1",
-    "58.231.240.248",   # 작업실
+    "58.231.240.248"   # 작업실
 ]
-
 allowed_networks = [ipaddress.ip_network(ip) for ip in allowed_ips]
-
 
 # .env 파일 로드
 load_dotenv()
