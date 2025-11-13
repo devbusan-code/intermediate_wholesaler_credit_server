@@ -280,13 +280,6 @@ class MySQLKKI:
 db = MySQLKKI(connection_pool)
 
 app = FastAPI()
-
-@app.middleware("http")
-async def ip_allow_middleware(request: Request, call_next):
-    client_ip = ipaddress.ip_address(request.client.host)
-    if not any(client_ip in net for net in allowed_networks):
-        return JSONResponse({"detail": "Forbidden"}, status_code=403)
-    return await call_next(request)
 ####################################################################################################################
 
 
