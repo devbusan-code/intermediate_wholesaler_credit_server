@@ -715,7 +715,7 @@ def wh_api_t01_01(r: WH_API_T01_01_Request):
 
         if r.CNTC_TYPE_CD == "CHECK":
             if r.LOAN_DV_CD == "HOLD" or r.LOAN_DV_CD == "USE":
-                flag_success, available_amount = intermediate_wholesaler_credit_search(r.ONLINE_PRCHR_PRMS_NO)
+                flag_success, available_amount = intermediate_wholesaler_credit_search(r.PRCHR_PRMS_NO)
                 if flag_success:
                     if available_amount - r.TOT_TRNS_AMT >= 0:
                         RESULT = "true"
@@ -752,7 +752,7 @@ def wh_api_t01_01(r: WH_API_T01_01_Request):
         log_data = intermediate_wholesaler_credit_api_log_insert_data(
             result = RESULT,
             flag_division = 0,                          # 구분 (0:조회, 1:홀드, 2:사용, 3:홀드취소, 4:사용취소, 9:기타)
-            jumehuga = r.ONLINE_PRCHR_PRMS_NO,
+            jumehuga = r.PRCHR_PRMS_NO,
             amount = r.TOT_TRNS_AMT, # Decimal 타입 그대로 전달
             request_content = request_content,
             response_content = json.dumps(response_content) # JSON 문자열로 변환
@@ -852,7 +852,7 @@ def wh_api_t01_02(r: WH_API_T01_02_Request): # noqa: C901
             PRCS_STAT_CD = "0"  # 정상
 
             # 1. 중도매인 존재 여부 및 약정한도 최초 조회 (반복문 밖에서 1회만)
-            flag_success, current_available_amount = intermediate_wholesaler_credit_search(r.ONLINE_PRCHR_PRMS_NO)
+            flag_success, current_available_amount = intermediate_wholesaler_credit_search(r.PRCHR_PRMS_NO)
 
             if not flag_success:
                 RESULT, MESSAGE, PRCS_STAT_CD = "false", "중도매인 존재하지 않음", "2"
@@ -881,14 +881,14 @@ def wh_api_t01_02(r: WH_API_T01_02_Request): # noqa: C901
 
                         # 2-4. intermediate_wholesaler_credit_order Table INSERT (트랜잭션)
                         query_order = "INSERT INTO intermediate_wholesaler_credit_order (idx, trade_date, trade_time, jumehuga, TRNS_DETL_ID, PRDCT_DETL_ID, ORDR_AMT) VALUES (%s, CURDATE(), CURTIME(), %s, %s, %s, %s)"
-                        params_order = (BUND_EGM_ID, r.ONLINE_PRCHR_PRMS_NO, item.TRNS_DETL_ID, item.PRDCT_DETL_ID, item.ORDR_AMT)
+                        params_order = (BUND_EGM_ID, r.PRCHR_PRMS_NO, item.TRNS_DETL_ID, item.PRDCT_DETL_ID, item.ORDR_AMT)
                         db.execute_query_with_conn(conn, query_order, params_order)
 
                         # 2-5. intermediate_wholesaler_credit Table UPDATE (트랜잭션)
-                        intermediate_wholesaler_credit_update_with_conn(conn, 1, r.ONLINE_PRCHR_PRMS_NO, item.ORDR_AMT)
+                        intermediate_wholesaler_credit_update_with_conn(conn, 1, r.PRCHR_PRMS_NO, item.ORDR_AMT)
 
                         # 2-6. intermediate_wholesaler_credit_log Table INSERT (트랜잭션)
-                        intermediate_wholesaler_credit_log_insert_with_conn(conn, r.ONLINE_PRCHR_PRMS_NO, 1, item.ORDR_AMT)
+                        intermediate_wholesaler_credit_log_insert_with_conn(conn, r.PRCHR_PRMS_NO, 1, item.ORDR_AMT)
 
                         # 2-7. 모든 DB 작업 성공 시 커밋
                         db.commit_transaction(conn)
@@ -946,7 +946,7 @@ def wh_api_t01_02(r: WH_API_T01_02_Request): # noqa: C901
         log_data = intermediate_wholesaler_credit_api_log_insert_data(
             result = RESULT,
             flag_division = 1,                        # 구분 (0:조회, 1:홀드, 2:사용, 3:홀드취소, 4:사용취소, 9:기타)
-            jumehuga = r.ONLINE_PRCHR_PRMS_NO if hasattr(r, 'ONLINE_PRCHR_PRMS_NO') else "",
+            jumehuga = r.PRCHR_PRMS_NO if hasattr(r, 'PRCHR_PRMS_NO') else "",
             amount = r.TOT_TRNS_AMT,
             request_content = request_content,
             response_content = json.dumps(response_content, default=str) # Decimal을 위해 default=str 추가
