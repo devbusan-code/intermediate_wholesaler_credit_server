@@ -461,6 +461,37 @@ def intermediate_wholesaler_credit_update_with_conn(conn, flag_division: int, ju
 
 
 ####################################################################################################################
+# intermediate_wholesaler_credit_order Table 업데이트 (Transaction)
+# flag_division
+# 1: 약정한도 홀드
+# 2: 약정한도 사용
+# 3: 약정한도 홀드취소
+# 4: 약정한도 사용취소
+####################################################################################################################
+def intermediate_wholesaler_credit_order_update_with_conn(conn, idx: str, flag_division: int) -> int:
+    query = ""
+    params = ()
+
+    try:
+        query = """
+            UPDATE intermediate_wholesaler_credit_order
+            SET flag_division = %s
+            WHERE idx = %s
+        """
+        params = (flag_division, idx)
+
+        return db.execute_query_with_conn(conn, query, params)
+
+    except Exception as e:
+        logger.error(f"UPDATE (in transaction) 오류: {e}")
+        raise # 예외를 다시 발생시켜 트랜잭션이 롤백되도록 함
+####################################################################################################################
+
+
+
+
+
+####################################################################################################################
 # intermediate_wholesaler_credit Table 업데이트 (Non-Transaction)
 ####################################################################################################################
 def intermediate_wholesaler_credit_update(flag_division: int, jumehuga: str, amount: Decimal) -> bool:
@@ -483,8 +514,15 @@ def intermediate_wholesaler_credit_update(flag_division: int, jumehuga: str, amo
 
 ####################################################################################################################
 # intermediate_wholesaler_credit_order Table 에서 거래에서 사용된 허가번호 & 주문금액 조회
+# 가차감시 ==> 조건이 없음 (사용하지 않음)
+# 실차감시 ==> flag_division == 1 : 약정한도 홀드가 조건이 됨
+# 가차감 취소시 ==> flag_division == 1 : 약정한도 홀드가 조건이 됨
+# 실차감 취소시 ==> flag_division == 2 : 약정한도 사용이 조건이 됨
+# flag_division
+# 1: 약정한도 홀드
+# 2: 약정한도 사용
 ####################################################################################################################
-def intermediate_wholesaler_credit_order_search(idx: str):
+def intermediate_wholesaler_credit_order_search(idx: str, flag_division: int):
     flag_success, jumehuga, order_amount = False, "", 0
     try:
         query = (
@@ -493,9 +531,10 @@ def intermediate_wholesaler_credit_order_search(idx: str):
                 , ORDR_AMT
             FROM intermediate_wholesaler_credit_order
             WHERE idx = %s
+                AND flag_division = %s
             """
         )
-        params = (idx,)
+        params = (idx, flag_division)
         result = db.execute_and_fetch_one(query, params)
 
         # result가 None이 아닐 경우
@@ -880,7 +919,7 @@ def wh_api_t01_02(r: WH_API_T01_02_Request): # noqa: C901
                         BUND_EGM_ID = f"{BUND_EGM_ID_BASE_CODE}{sequence:06d}"
 
                         # 2-4. intermediate_wholesaler_credit_order Table INSERT (트랜잭션)
-                        query_order = "INSERT INTO intermediate_wholesaler_credit_order (idx, trade_date, trade_time, jumehuga, TRNS_DETL_ID, PRDCT_DETL_ID, ORDR_AMT) VALUES (%s, CURDATE(), CURTIME(), %s, %s, %s, %s)"
+                        query_order = "INSERT INTO intermediate_wholesaler_credit_order (idx, trade_date, trade_time, jumehuga, flag_division, TRNS_DETL_ID, PRDCT_DETL_ID, ORDR_AMT) VALUES (%s, CURDATE(), CURTIME(), %s, 1, %s, %s, %s)"
                         params_order = (BUND_EGM_ID, r.PRCHR_PRMS_NO, item.TRNS_DETL_ID, item.PRDCT_DETL_ID, item.ORDR_AMT)
                         db.execute_query_with_conn(conn, query_order, params_order)
 
@@ -1004,7 +1043,7 @@ def wh_api_t01_03(r: WH_API_T01_03_Request):
             RESULT, MESSAGE, PRCS_STAT_CD = "true", "성공", "0"
 
             for item in r.TRNS_ITEM:
-                flag_success, temp_jumehuga, order_amount = intermediate_wholesaler_credit_order_search(item.BUND_EGM_ID)
+                flag_success, temp_jumehuga, order_amount = intermediate_wholesaler_credit_order_search(item.BUND_EGM_ID, 1)
                 jumehuga = temp_jumehuga if temp_jumehuga else jumehuga
                 total_amount += item.ORDR_AMT
 
@@ -1012,14 +1051,17 @@ def wh_api_t01_03(r: WH_API_T01_03_Request):
                     RESULT, MESSAGE, PRCS_STAT_CD = "false", f"주문({item.BUND_EGM_ID})을 찾을 수 없습니다.", "2"
                     break
 
-                # 1. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
+                # 1. intermediate_wholesaler_credit_order Table flag_division = 2 로 UPDATE (트랜잭션)
+                intermediate_wholesaler_credit_order_update_with_conn(conn, 2, item.BUND_EGM_ID)
+
+                # 2. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
                 updated_rows = intermediate_wholesaler_credit_update_with_conn(conn, 2, jumehuga, item.ORDR_AMT)
 
                 if updated_rows == 0:
                     RESULT, MESSAGE, PRCS_STAT_CD = "false", f"주문({item.BUND_EGM_ID})의 여신 사용 처리에 실패했습니다.", "2"
                     break
 
-                # 2. intermediate_wholesaler_credit_log Table 삽입 (트랜잭션)
+                # 3. intermediate_wholesaler_credit_log Table 삽입 (트랜잭션)
                 intermediate_wholesaler_credit_log_insert_with_conn(conn, jumehuga, 2, item.ORDR_AMT)
 
                 # 성공한 아이템 정보 추가
@@ -1098,17 +1140,24 @@ def wh_api_t01_04(r: WH_API_T01_04_Request):
     jumehuga = ""
     total_amount = Decimal('0.0')
     request_content = ""
-    flag_division = 0
+    flag_division_current = 0
+    flag_division_next = 0
 
     try:
         request_content = r.model_dump_json()
 
         if r.CNTC_TYPE_CD == "CANCEL":
-            # LOAN_USE_CD에 따라 쿼리와 flag_division 결정
-            if r.LOAN_USE_CD == "01": # 홀드 취소
-                flag_division = 3
-            elif r.LOAN_USE_CD == "02": # 사용 취소
-                flag_division = 4
+            # LOAN_USE_CD에 따라 쿼리와 flag_division_current & flag_division_next 결정
+            if r.LOAN_USE_CD == "01":
+                # 홀드
+                flag_division_current = 1
+                # 홀드 취소
+                flag_division_next = 3
+            elif r.LOAN_USE_CD == "02":
+                # 사용
+                flag_division_current = 2
+                # 사용 취소
+                flag_division_next = 4
             else:
                 RESULT, MESSAGE = "false", "LOAN_USE_CD 오류"
                 # 모든 아이템을 실패 처리
@@ -1124,7 +1173,7 @@ def wh_api_t01_04(r: WH_API_T01_04_Request):
 
                 try:
                     # 1. 주문 정보 조회
-                    flag_success, temp_jumehuga, order_amount = intermediate_wholesaler_credit_order_search(item.BUND_EGM_ID)
+                    flag_success, temp_jumehuga, order_amount = intermediate_wholesaler_credit_order_search(item.BUND_EGM_ID, flag_division_current)
                     if not flag_success:
                         raise ValueError(f"주문({item.BUND_EGM_ID})을 찾을 수 없습니다.")
                     
@@ -1143,15 +1192,20 @@ def wh_api_t01_04(r: WH_API_T01_04_Request):
                     if not wholesaler_exists:
                         raise ValueError(f"존재하지 않는 중도매인({jumehuga})입니다.")
 
-                    # 4. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
-                    intermediate_wholesaler_credit_update_with_conn(conn, flag_division, jumehuga, order_amount)
+                    # 4. intermediate_wholesaler_credit_order Table flag_division = 3 또는 4 로 UPDATE (트랜잭션)
+                    intermediate_wholesaler_credit_order_update_with_conn(conn, flag_division_next, item.BUND_EGM_ID)
 
-                    # 5. intermediate_wholesaler_credit_log Table 삽입 (트랜잭션)
-                    intermediate_wholesaler_credit_log_insert_with_conn(conn, jumehuga, flag_division, order_amount)
+                    # 5. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
+                    intermediate_wholesaler_credit_update_with_conn(conn, flag_division_next, jumehuga, order_amount)
 
-                    # 6. 모든 DB 작업 성공 시 커밋
+                    # 6. intermediate_wholesaler_credit_log Table 삽입 (트랜잭션)
+                    intermediate_wholesaler_credit_log_insert_with_conn(conn, jumehuga, flag_division_next, order_amount)
+
+                    # 7. 모든 DB 작업 성공 시 커밋
                     db.commit_transaction(conn)
-                    conn = None # 커밋 후에는 conn을 None으로 설정
+
+                    # 커밋 후에는 conn을 None으로 설정
+                    conn = None 
 
                     item_prcs_stat_cd = "0" # 성공
                     item_message = "성공"
@@ -1186,7 +1240,7 @@ def wh_api_t01_04(r: WH_API_T01_04_Request):
         }
         log_data = intermediate_wholesaler_credit_api_log_insert_data(
             result = RESULT,
-            flag_division = flag_division if flag_division != 0 else 9,
+            flag_division = flag_division_next if flag_division_next != 0 else 9,
             jumehuga = jumehuga,
             amount = total_amount,
             request_content = request_content,
