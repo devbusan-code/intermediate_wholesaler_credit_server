@@ -1052,7 +1052,7 @@ def wh_api_t01_03(r: WH_API_T01_03_Request):
                     break
 
                 # 1. intermediate_wholesaler_credit_order Table flag_division = 2 로 UPDATE (트랜잭션)
-                intermediate_wholesaler_credit_order_update_with_conn(conn, 2, item.BUND_EGM_ID)
+                intermediate_wholesaler_credit_order_update_with_conn(conn, item.BUND_EGM_ID, 2)
 
                 # 2. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
                 updated_rows = intermediate_wholesaler_credit_update_with_conn(conn, 2, jumehuga, item.ORDR_AMT)
@@ -1193,7 +1193,7 @@ def wh_api_t01_04(r: WH_API_T01_04_Request):
                         raise ValueError(f"존재하지 않는 중도매인({jumehuga})입니다.")
 
                     # 4. intermediate_wholesaler_credit_order Table flag_division = 3 또는 4 로 UPDATE (트랜잭션)
-                    intermediate_wholesaler_credit_order_update_with_conn(conn, flag_division_next, item.BUND_EGM_ID)
+                    intermediate_wholesaler_credit_order_update_with_conn(conn, item.BUND_EGM_ID, flag_division_next)
 
                     # 5. intermediate_wholesaler_credit Table 업데이트 (트랜잭션)
                     intermediate_wholesaler_credit_update_with_conn(conn, flag_division_next, jumehuga, order_amount)
