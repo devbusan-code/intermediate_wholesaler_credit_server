@@ -38,14 +38,18 @@
 루트 디렉터리에 `.env` 파일을 생성하고 MySQL 접속 정보를 설정합니다.
 
 ```env
-MYSQL_HOST=
-MYSQL_PORT=
-MYSQL_USER=
-MYSQL_PASSWORD=
-MYSQL_DATABASE=
+MYSQL_HOST=<mysql-host>
+MYSQL_PORT=<mysql-port>
+MYSQL_USER=<mysql-user>
+MYSQL_PASSWORD=<mysql-password>
+MYSQL_DATABASE=<mysql-database>
+ALLOWED_IPS=<allowed-ip-list>
 ```
 
 `MYSQL_PORT`가 비어 있으면 코드상 기본값은 `3306`입니다.
+
+`ALLOWED_IPS`는 API 호출을 허용할 IP 또는 CIDR 대역을 콤마로 구분해서 입력합니다.
+운영 서버, 연동 서버, 사무실 고정 IP 등 실제 허용 대상은 `.env`에만 관리하고 소스와 문서에는 노출하지 않습니다.
 
 ## 설치
 
@@ -179,17 +183,14 @@ sudo systemctl restart intermediate-wholesaler-credit
 
 `main.py`의 HTTP 미들웨어에서 요청 클라이언트 IP를 검사합니다. 허용 목록에 없는 IP는 `403 Forbidden`으로 차단됩니다.
 
-현재 허용 IP는 `main.py`의 `allowed_ips`에서 관리합니다.
+현재 허용 IP는 `.env`의 `ALLOWED_IPS`에서 관리합니다.
 
-```python
-allowed_ips = [
-    "127.0.0.1",
-    "58.231.240.248",
-    "180.210.117.190",
-    "180.210.117.184",
-]
+```env
+ALLOWED_IPS=<allowed-ip-list>
 ```
 
+단일 IP와 CIDR 대역을 함께 사용할 수 있으며, 공백 없이 콤마로 구분하는 것을 권장합니다.
+실제 IP 값은 문서나 소스에 남기지 말고 `.env`에만 입력합니다.
 운영 환경에서 프록시, 로드밸런서, 컨테이너 네트워크를 사용하는 경우 `request.client.host`가 실제 호출자 IP가 아닐 수 있으므로 배포 구조에 맞게 확인이 필요합니다.
 
 ## API 요약
